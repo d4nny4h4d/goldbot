@@ -1,0 +1,76 @@
+# Gold Trading Bot — Strategy & Risk Configuration
+# All monetary values are in PERCENTAGES, not dollar amounts
+
+# ─── RISK MANAGEMENT (applies globally) ─────────────────────────────────────
+risk_management:
+  risk_per_trade_pct: 2.0           # % of equity risked per trade
+  daily_loss_limit_pct: 3.0         # % daily loss → circuit breaker stops all trading
+  weekly_loss_limit_pct: 8.0        # % weekly loss → manual review required
+  monthly_drawdown_alert_pct: 15.0  # % monthly drawdown → reduce to 1% risk/trade
+  absolute_max_drawdown_pct: 20.0   # % from peak equity → full stop, strategy review
+  max_open_positions: 2             # max simultaneous open positions (small account)
+  max_same_direction: 1             # max positions in same direction
+  news_blackout_minutes: 15         # pause trading before NFP, CPI, FOMC, GDP
+  min_lot_size: 0.01                # micro lot minimum
+  max_lot_size: 0.10                # cap for $500 account safety
+
+# ─── REGIME DETECTION ────────────────────────────────────────────────────────
+regime_detection:
+  adx_period: 14
+  adx_ranging_threshold: 20         # ADX < 20 = ranging market
+  adx_trending_threshold: 30        # ADX 20-30 = transitional
+  adx_strong_threshold: 50          # ADX > 50 = strong trend
+  check_interval_minutes: 15
+
+# ─── STRATEGY: INTRADAY TREND FOLLOWING (ITF) ────────────────────────────────
+# Rank 1 — Sharpe 1.58, 46.2% win rate, PF 1.83, Max DD -10.9%
+intraday_trend_following:
+  enabled: true
+  timeframe: M15                    # 15-minute candles
+  ema_period: 44                    # trend direction filter
+  rsi_period: 14                    # momentum oscillator
+  rsi_low: 40.0                     # RSI pullback zone lower bound
+  rsi_high: 60.0                    # RSI pullback zone upper bound
+  atr_period: 14                    # volatility measure
+  tp_atr_mult: 3.0                  # take profit = 3.0 × ATR from entry
+  sl_atr_mult: 1.65                 # stop loss / trailing = 1.65 × ATR
+  hard_exit_utc: "20:00"            # force close all positions at this time
+  sessions: ["all"]                 # active during all sessions
+  min_adx: 25                       # minimum ADX to take trades (prefer trends)
+
+# ─── STRATEGY: LONDON BREAKOUT MOMENTUM (LBM) — Phase 2 ─────────────────────
+# Rank 2 — Sharpe 1.41, 44.8% win rate, PF 1.89, Max DD -12.4%
+# Unlocked when equity reaches $1,000+
+london_breakout:
+  enabled: false
+  timeframe: M15
+  asian_range_start: "00:00"        # GMT
+  asian_range_end: "07:55"          # GMT
+  entry_time: "08:00"               # London open GMT
+  atr_period: 14
+  atr_mult_entry: 0.75             # breakout buffer = 0.75 × ATR
+  atr_mult_tp: 2.8                  # TP = 2.8 × ATR from breakout
+  body_ratio_min: 0.60              # candle body must be >60% of range
+  exit_time: "13:00"                # GMT hard exit
+  sessions: ["london"]
+
+# ─── STRATEGY: NY OPENING RANGE BREAKOUT (ORB) — Phase 3 ────────────────────
+# Rank 3 — Sharpe 1.28, 47.5% win rate, PF 2.14, Max DD -15.8%
+# Unlocked when equity reaches $2,500+
+ny_opening_range_breakout:
+  enabled: false
+  timeframe: M15
+  range_start: "13:30"              # GMT
+  range_end: "13:45"                # GMT
+  entry_time: "13:45"               # GMT
+  volume_mult: 1.4                  # volume must be 1.4× 20-bar average
+  tp_mult: 2.6                      # TP = 2.6 × range width
+  exit_time: "17:00"                # GMT
+  sessions: ["newyork"]
+
+# ─── GENERAL SETTINGS ────────────────────────────────────────────────────────
+general:
+  check_interval_seconds: 15        # how often to poll for new candles/signals
+  log_level: INFO
+  db_path: data/goldbot.db
+  timezone: UTC
