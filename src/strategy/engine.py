@@ -38,9 +38,10 @@ class StrategyEngine:
 
         # Initialize enabled strategies
         if cfg.get("intraday_trend_following", {}).get("enabled"):
-            self.strategies.append(
-                IntradayTrendFollowing(cfg["intraday_trend_following"])
-            )
+            itf = IntradayTrendFollowing(cfg["intraday_trend_following"])
+            # Inject feed reference so ITF can fetch HTF candles for trend filter
+            itf._feed = feed
+            self.strategies.append(itf)
             logger.info("Strategy loaded: Intraday Trend Following (ITF)")
 
         # Future strategies will be added here as account grows:

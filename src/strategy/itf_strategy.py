@@ -45,6 +45,19 @@ class IntradayTrendFollowing(BaseStrategy):
         self.hard_exit_utc = config.get("hard_exit_utc", "20:00")
         self.min_adx = config.get("min_adx", 25)
 
+        # ─── Post-paper-trading optimization filters (added 2026-04-17) ───
+        # Based on 35 days of paper trading: Mondays lost money (23% WR),
+        # hours 09-11 UTC lost, 14 UTC lost; hours 07-08 & 12-13 UTC had
+        # 50-67% WR. Shorts lost overall (33% WR vs longs 47%).
+        self.allowed_hours = set(config.get("allowed_hours", []) or [])  # empty = all
+        self.skip_weekdays = set(config.get("skip_weekdays", []) or [])  # 0=Mon, 6=Sun
+        self.use_htf_trend_filter = config.get("use_htf_trend_filter", False)
+        self.htf_ema_period = config.get("htf_ema_period", 200)
+        self.htf_timeframe = config.get("htf_timeframe", "H4")
+
+        # Feed reference (injected by engine for HTF data access)
+        self._feed = None
+
         self._mt5_login = os.environ.get("MT5_LOGIN", "")
         self._last_signal_time = None
 
@@ -180,6 +193,19 @@ class IntradayTrendFollowing(BaseStrategy):
         if now_utc.hour >= exit_hour - 1:
             return None
 
+        # ─── Day-of-week filter (skip Mondays per paper-trading analysis) ───
+        if self.skip_weekdays and now_utc.weekday() in self.skip_weekdays:
+            logger.debug("ITF: Skipping — weekday %d in skip_weekdays", now_utc.weekday())
+            return None
+
+        # ─── Hour filter (only trade during profitable hour pockets) ───
+        if self.allowed_hours and now_utc.hour not in self.allowed_hours:
+            logger.debug(
+                "ITF: Skipping — hour %d not in allowed_hours %s",
+                now_utc.hour, sorted(self.allowed_hours),
+            )
+            return None
+
         # Avoid duplicate signals on same candle
         last_candle_time = candles.index[-1]
         if self._last_signal_time == last_candle_time:
@@ -226,6 +252,42 @@ class IntradayTrendFollowing(BaseStrategy):
 
         if direction == SignalDirection.NONE:
             return None
+
+        # ─── Higher-timeframe trend filter ───
+        # Only take longs when H4 close is above H4 EMA(200) (uptrend).
+        # Only take shorts when H4 close is below H4 EMA(200) (downtrend).
+        # Prevents counter-trend shorts during structural uptrends — based on
+        # paper-trading analysis where shorts underperformed (33% WR vs 47%).
+        if self.use_htf_trend_filter and self._feed is not None:
+            try:
+                htf_candles = self._feed.get_candles(
+                    self.htf_timeframe, count=max(self.htf_ema_period + 20, 250)
+                )
+                if htf_candles is not None and len(htf_candles) >= self.htf_ema_period:
+                    htf_ema = self._calc_ema(htf_candles["close"], self.htf_ema_period)
+                    htf_close = htf_candles["close"].iloc[-1]
+                    htf_ema_val = htf_ema.iloc[-1]
+                    if not np.isnan(htf_ema_val):
+                        htf_bullish = htf_close > htf_ema_val
+                        if direction == SignalDirection.BUY and not htf_bullish:
+                            logger.debug(
+                                "ITF: Skipping BUY — %s close %.2f below EMA(%d) %.2f",
+                                self.htf_timeframe, htf_close, self.htf_ema_period, htf_ema_val,
+                            )
+                            return None
+                        if direction == SignalDirection.SELL and htf_bullish:
+                            logger.debug(
+                                "ITF: Skipping SELL — %s close %.2f above EMA(%d) %.2f",
+                                self.htf_timeframe, htf_close, self.htf_ema_period, htf_ema_val,
+                            )
+                            return None
+                else:
+                    logger.warning(
+                        "ITF: HTF trend filter requested but insufficient %s data",
+                        self.htf_timeframe,
+                    )
+            except Exception as exc:
+                logger.warning("ITF: HTF trend filter failed: %s", exc)
 
         # Calculate SL and TP
         sl_distance = self.sl_atr_mult * current_atr

@@ -38,6 +38,19 @@ intraday_trend_following:
   sessions: ["all"]                 # active during all sessions
   min_adx: 25                       # minimum ADX to take trades (prefer trends)
 
+  # ─── Paper-trading optimization filters (added 2026-04-17) ───
+  # Analysis of 70 live trades (35 days) showed:
+  #   - Mondays: 23% WR, avg -$7.79 → skip
+  #   - Hours 09-11, 14 UTC: all losing → block
+  #   - Hours 07-08, 12-13 UTC: 50-67% WR → keep
+  #   - Shorts in H4 uptrend: 33% WR (vs longs 47%) → filter with HTF trend
+  # Backtest: these filters turn -$134 into +$212 over the paper-trading period
+  allowed_hours: [7, 8, 12, 13]     # UTC hours — empty list = all hours allowed
+  skip_weekdays: [0]                # 0=Mon, 1=Tue, ... 6=Sun — [] = no skip
+  use_htf_trend_filter: true        # block counter-trend entries vs HTF trend
+  htf_timeframe: "H4"               # timeframe for trend filter
+  htf_ema_period: 200               # EMA period for HTF trend determination
+
 # ─── STRATEGY: LONDON BREAKOUT MOMENTUM (LBM) — Phase 2 ─────────────────────
 # Rank 2 — Sharpe 1.41, 44.8% win rate, PF 1.89, Max DD -12.4%
 # Unlocked when equity reaches $1,000+
